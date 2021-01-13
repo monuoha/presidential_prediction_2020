@@ -1,43 +1,35 @@
 ---
-title: "presidential prediction"
-author: "Michael Onuoha, Travis Barton"
-date: "10/6/2020"
-output: html_document
+title: "2020 Presidential Election Prediction"
+author: "Michael Onuoha"
+date: "October 6, 2020"
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 require(readr)  # for reading data into R
 library(dplyr)  # for a set of really useful data selection tools
-data <- read_csv('polls/president_polls.csv')
+data <- read.csv('~/Desktop/polls/president_polls.csv', na.strings = c('',NA))
 attach(data)  # eliminates the need for data$....
-```
-
-### Where is our data from?
-#The data is from the FiveThirtyEight website
-
-### Why did we choose it?
-#The variables that we chose are relatively more vital to accurately determining who will win the upcoming election
-
-### Data Summary
-```{r, data cleaning, echo=FALSE}
-
-data = select(data, state, pollster, sponsors, fte_grade, sample_size, methodology, start_date, end_date, answer, pct)  # select the useful data
+data = select(data, state, pollster, sponsors, fte_grade, sample_size, methodology, start_date, end_date, answer, question_id, poll_id, pct)  # select the useful data
 data$state = as.factor(data$state)  # make into factor
+data$question_id = as.factor(data$question_id)
+data$poll_id = as.factor(data$poll_id)
 data$pollster = as.factor(data$pollster)  # make into factor
 data$sponsors = as.factor(data$sponsors)  # make into factor
 data$fte_grade = as.factor(data$fte_grade)  # make into factor
 data$methodology = as.factor(data$methodology)  # make into factor
 data$start_date = as.Date(data$start_date, format = "%m/%d/%y")  # format tells you how to read the dates. In our case is month/day/two-number-year or %m/%d/%y 
 data$end_date = as.Date(data$end_date, format = "%m/%d/%y")  # format tells you how to read the dates. In our case is month/day/two-number-year or %m/%d/%y
-data$answer = as.factor(data$answer)  # make into factor
+data$answer = as.factor(data$answer) # make into factor
 
-summary(data)  # lets summarize
 
+summary(data)# lets summarize
 
 ##### What needs to be done to the data next? #####
 # delete NAs for state, fte_grade, methodology! 
-#### google it ;P 
 data_1 = data[complete.cases(data$state),] #complete.cases revoves rows containing NAs
 summary(data_1)
 data_2 = data_1[complete.cases(data_1$fte_grade),]
@@ -45,8 +37,8 @@ summary(data_2)
 clean_data = data_2[complete.cases(data_2$methodology),]
 summary(clean_data) #clean_data is the modified datasets containing no NAs for the three variables
 
+
 # minimum grade allowance (what grade is too low?).
-#### find how many rows are in each grade?
 print(clean_data$fte_grade)
 A_1 = clean_data[(clean_data$fte_grade == "A+"),]
 nrow(A_1) #376 rows have A+
@@ -75,47 +67,350 @@ nrow(C_D) #142 rows have C/D
 D_grade = clean_data[(clean_data$fte_grade == "D-"),]
 nrow(D_grade) #1228 rows have D-
 
-clean_data1 = clean_data[!(clean_data$fte_grade == "D-" | clean_data$fte_grade == "C/D"),]
-summary(clean_data1) #clean_data1 is the modified dataset without the relatively unreliable pollsters
+clean_data1 = clean_data[!(clean_data$fte_grade %in% c("C/D", "D-")),]
+clean_data1$fte_grade = as.factor(as.character(clean_data1$fte_grade))
+summary(clean_data1)#clean_data1 is the modified dataset without the relatively unreliable pollsters
+
+
+
 
 # start dates start too soon.
-#### delete rows that that start past some cutoff?
-# end_dates end too soon. 
-#### delete rows that end too soon?
+# end_dates end too soon.
 print(clean_data1$start_date)
 clean_data2 = clean_data1[(clean_data1$start_date > "2019-12-30"),]
 summary(clean_data2) #clean_data2 is the modified dataset without the dates that start/end before 2020
+date_cleaner = function(x){
+  if((is.na(x['start_date']) == TRUE) || (is.na(x['end_date']) == TRUE)){
+    return(NA)
+  }
+  time_diff = x["end_date"] - x["start_date"]
+  return(time_diff)
+}
+answer = c()  # something to hold the answer
+for(i in 1:nrow(clean_data2)){  # loop through every row
+  answer = c(answer, date_cleaner(clean_data2[i,]))  # add the output of date_cleaner to answer for every row
+}
+den = density(as.numeric(answer))
+plot(den)
 
-#### delete rows that have too short/long a duration
+#number of days should by more than two but less than ten
+clean_data3 = clean_data2[!(date_cleaner(clean_data2) < 2 | date_cleaner(clean_data2) > 10),]
+summary(clean_data3) #clean_data3 is the dataset in which the dates are neither too long not too short
+#View(clean_data3)
+
+
+
+
+#we only want to focus on Trump and Biden
+clean_data4 = clean_data3[clean_data3$answer %in% c("Trump", "Biden"),]
+clean_data4$answer = as.factor(as.character(clean_data4$answer))
+summary(clean_data4) #clean_data4 focuses only on Trump and Biden
+summary(clean_data4$answer) 
+#View(clean_data4)
+
+#the number of rows for Trump and Biden are uneven
+clean_data5 = clean_data4[clean_data4$question_id %in% clean_data4$question_id[duplicated(clean_data4$question_id)],]
+summary(clean_data5) #this dataset ensures that the number of rows for the two candidates are even 
+#View(clean_data5)
 
 # sample size is really variable, and some sameples are too small to decide. (how small is too small? Depends on state/numbner of polls/quality of polls/etc)
-#### plot the density of sample sizes
-d = density(clean_data2$sample_size)
+d = density(clean_data5$sample_size)
 plot(d) 
 
-#density curve is skewed to the left, so we must increase the minimum sample size number
-clean_data3 = clean_data2[(clean_data2$sample_size > 1500),]
-summary(clean_data3) #clean_data3 is the modified dataset whose minimum sample size number is more than 1500
-
-d_2 = density(clean_data3$sample_size)
-plot(d_2) #It's still skewed to the left, but we do not want to increase the minimum sample size number too much otherwise we would not have sufficient data to work with
-
+#maximize sufficiency of data
+clean_data6 = clean_data5[(clean_data5$sample_size > 150),]
+summary(clean_data6) 
+clean_data6$state = as.factor(as.character(clean_data6$state))
+levels(clean_data6$state)
 
 
+d_2 = density(clean_data6$sample_size)
+plot(d_2) 
+#View(clean_data6)
+
+#Let's add some rows so that ALL states are accounted for
+da_1 = clean_data[clean_data$state %in% c("Arkansas", "District of Columbia","Delaware", "Hawaii", "Idaho", "Illinois", "Nebraska", "Rhode Island", "South Dakota", "Vermont", "Wyoming"),]
+da_2 = da_1[c(275, 276, 33, 34, 41, 42, 29, 30, 31, 32, 25, 26, 21, 22, 17, 18, 13, 14, 15, 16, 9, 10, 11, 12, 5, 6, 7, 8, 37, 38, 135, 136, 1, 2, 3, 4),]
+clean_data7 = rbind(clean_data6, da_2)
+summary(clean_data7) 
+clean_data8 = clean_data7[clean_data7$answer %in% c("Trump", "Biden"),]
+clean_data8$answer = as.factor(as.character(clean_data8$answer))
+summary(clean_data8) #the dataset shows the rows added back for sufficiency sake
+
+#increase the minimum sample size number to maximize sufficiency of data
+clean_data9 = clean_data8[(clean_data8$sample_size >= 375),]
+summary(clean_data9) #clean_data6 is the modified dataset whose minimum sample size number is more than 375
+clean_data9$state = as.factor(as.character(clean_data9$state))
+levels(clean_data9$state)
 
 
+d_2 = density(clean_data9$sample_size)
+plot(d_2) 
 ```
 
-### Data cleaning pipeline
-```{r, data loading}
 
+## Introduction
+For the upcoming 2020 presidential election, not only do I want to project whether Biden or Trump will win the election, but I also want to determine how close the election will be. In other words, I am trying to determine whether the winner will win by a landslide or win by a narrow margin. In order to make my projection, I will perform several simulations that will produce various scenarios for the election and create a density plot to determine the closeness of the final outcome. The dataset is a collection of polls and is from the [FiveThirtyEight website](https://projects.fivethirtyeight.com/2020-election-forecast/). I chose this dataset because it is aggregated, sourced reliably, and has a sufficient diversity of elements.  
 
+## Data Overview
+```{r echo=FALSE}
+variable = colnames(data)
+data_desc = data.frame(matrix(ncol = 1, nrow = ncol(data)), row.names = variable)
+colnames(data_desc) = c('Description of Variable')
+data_desc_1 = subset(data_desc, !row.names(data_desc) %in% c('question_id', 'poll_id'))
+data_desc_1['state', 'Description of Variable'] = "The name of the state"
+data_desc_1['pollster', 'Description of Variable'] = 'The name of the pollster'
+data_desc_1['sponsors', 'Description of Variable'] = 'The name of the sponsor for the pollster'
+data_desc_1['fte_grade', 'Description of Variable'] = 'The reliability grade for the pollster'
+data_desc_1['sample_size', 'Description of Variable'] = 'The sample size of those surveyed for the pollster'
+data_desc_1['methodology', 'Description of Variable'] = 'The method that the pollster used to conduct surveys'
+data_desc_1['start_date', 'Description of Variable'] = 'The first day of the polling'
+data_desc_1['end_date', 'Description of Variable'] = 'The last day of polling'
+data_desc_1['answer', 'Description of Variable'] = 'The name of the presidential candidate'
+data_desc_1['pct', 'Description of Variable'] = 'Voteshare for the corresponding candidate in the poll'
+knitr::kable(data_desc_1)
+```
+### Levels/Distributions for Each Variable 
+This is the list of states:
+```{r echo=FALSE}
+levels(data$state)
 ```
 
-### variable selection
+This is the list of reliability grades as well as their distribution:
+```{r echo=FALSE}
+levels(data$fte_grade)
+library(ggplot2)
+barplot(table(data$fte_grade), main = "Reliability Grade Distribution", xlab = "Grades", col = 'light blue')
+```
 
-### Model building
+This is the distribution for the sample sizes:
+```{r echo=FALSE}
+hist(na.omit(data$sample_size), xlab = 'Sample Size', main = "Sample Size Distribution", col = 'yellow')
+```
 
-### validation
+This is the list of methodologies as well as their distribution:
+```{r echo=FALSE}
+levels(data$methodology)
+par(mar = c(10, 4.1, 4.1, 2.1))
+barplot(table(data$methodology), main = "Methodology Distribution", las = 2, col = 'yellow green') 
+```
 
-### publication?
+This is the distribution of the start dates:
+```{r echo=FALSE}
+par(mar = c(5.3, 4.1, 4.1, 2.1))
+hist(data$start_date, 'months', xlab = '', main = "Start Date Distribution", las = 2, col = 'green')
+```
+
+This is the distribution of the end dates:
+```{r echo=FALSE}
+par(mar = c(5.3, 4.1, 4.1, 2.1))
+hist(data$end_date, 'months', xlab = '', main = "End Date Distribution", las = 2, col = 'orange')
+```
+
+This is the list of presidential candidates:
+```{r echo = FALSE}
+levels(data$answer)
+```
+*Note: Only Biden and Trump will be used in my analysis.*
+
+This is the distribution of the percentage of poll participants who chose Biden:
+```{r echo = FALSE}
+b = data[(data$answer == 'Biden'),]
+plot(density(b$pct), xlab = 'Voteshares', main = "Voteshare Distribution for Biden", col = 'blue')
+```
+
+This is the distribution of the percentage of poll participants who chose Trump:
+```{r echo = FALSE}
+t = data[(data$answer == 'Trump'),]
+plot(density(t$pct), xlab = 'Voteshares', main = "Voteshare Distribution for Trump", col = 'red')
+```
+
+## Data Cleaning Pipeline
+Although the elements in the dataset are diverse, I want to ensure that for the variables crucial for my projections (states, reliability grades, and methodologies), only the elements useful for my analysis remain in the final cleaned dataset. For instance, I kept the rows not containing NA elements for the three variables. I also ensured that only the rows containing the following grades are included in the final dataset: A+, A, A-, A/B, B+, B, B-, B/C, C+, C, and C-. These grades show the pollsters included in my analysis are reliable. I then ensured that only polling dates in 2020 are included and that these dates are between two and ten days. Since the Democratic and Republican parties are the major parties, I also ensured that the final dataset only includes Biden and Trump. However, after keeping all of the useful rows, I discovered that there are some states that are no longer accounted for, so I added enough rows to resolve the issue even though they fail to satisfy the criteria mentioned earlier. Finally, I ensured that the minimum sample size number is 375 to make my data more sufficient.     
+
+
+## Simulation Process
+After modifying the dataset, I created a table consisting of the average voteshares for Biden and Trump in each state along with their variances and confidence intervals. The table also includes the number of electoral votes associated with each state.
+
+```{r echo = FALSE}
+#Let's get to model building
+states = unique(clean_data9$state)
+
+
+state_dist = data.frame(matrix(ncol = 5, nrow = length(states)), row.names = states)
+colnames(state_dist) = c('state', 'trump_mean', 'trump_var', 'biden_mean', 'biden_var')
+
+
+for(s in states){
+  state_dist[s, 'state'] = s
+  #calculate stats for trump
+  temp_mean = mean(clean_data9[(clean_data9$state == s & clean_data9$answer == 'Trump'),]$pct, na.rm = TRUE)
+  temp_var = var(clean_data9[(clean_data9$state == s & clean_data9$answer == 'Trump'),]$pct, na.rm = TRUE)
+  state_dist[s, "trump_mean"] = temp_mean
+  state_dist[s, "trump_var"] = temp_var
+  #calculate stats for biden
+  temp_mean = mean(clean_data9[(clean_data9$state == s & clean_data9$answer == 'Biden'),]$pct, na.rm = TRUE)
+  temp_var = var(clean_data9[(clean_data9$state == s & clean_data9$answer == 'Biden'),]$pct, na.rm = TRUE)
+  state_dist[s, "biden_mean"] = temp_mean
+  state_dist[s, "biden_var"] = temp_var
+}
+
+# first goal is to find the winning states!
+ci_col = data.frame(matrix(ncol = 4, nrow = length(states)), row.names = states)
+colnames(ci_col) = c('ci_trump_1', 'ci_trump_2', 'ci_biden_1', 'ci_biden_2')
+state_dist1 = cbind(state_dist, ci_col)
+
+#perhaps we can replace the NAs in the Nebraska CD-1 row with the means of each column
+state_dist1[is.na(state_dist1$trump_var), "trump_var"] = mean(state_dist1$trump_var, na.rm = TRUE)
+state_dist1[is.na(state_dist1$biden_var), "biden_var"] = mean(state_dist1$biden_var, na.rm = TRUE)
+state_dist1[is.na(state_dist1$ci_trump_1), "ci_trump_1"] = mean(state_dist1$ci_trump_1, na.rm = TRUE)
+state_dist1[is.na(state_dist1$ci_trump_2), "ci_trump_2"] = mean(state_dist1$ci_trump_2, na.rm = TRUE)
+state_dist1[is.na(state_dist1$ci_biden_1), "ci_biden_1"] = mean(state_dist1$ci_biden_1, na.rm = TRUE)
+state_dist1[is.na(state_dist1$ci_biden_2), "ci_biden_2"] = mean(state_dist1$ci_biden_2, na.rm = TRUE)
+
+#we do not want any variances to be zero
+state_dist1[(state_dist1$trump_var == 0), "trump_var"] = mean(state_dist1$trump_var[state_dist1$trump_var != 0], na.rm = TRUE)
+state_dist1[(state_dist1$biden_var == 0), "biden_var"] = mean(state_dist1$biden_var[state_dist1$biden_var != 0], na.rm = TRUE)
+
+
+#let's construct the confidence intervals  
+for(v in 1:nrow(state_dist1)){
+  ci_trump1 = state_dist1[v, 'trump_mean'] - 1.96*sqrt(state_dist1[v, 'trump_var'])
+  ci_trump2 = state_dist1[v, 'trump_mean'] + 1.96*sqrt(state_dist1[v, 'trump_var'])
+  ci_biden1 = state_dist1[v, 'biden_mean'] - 1.96*sqrt(state_dist1[v, 'biden_var'])
+  ci_biden2 = state_dist1[v, 'biden_mean'] + 1.96*sqrt(state_dist1[v, 'biden_var'])
+  state_dist1[v, 'ci_trump_1'] = ci_trump1
+  state_dist1[v, 'ci_trump_2'] = ci_trump2
+  state_dist1[v, 'ci_biden_1'] = ci_biden1
+  state_dist1[v, 'ci_biden_2'] = ci_biden2
+}
+```
+
+
+```{r include = FALSE}
+#now to gather the electoral votes for each state
+elec_ = read_csv("~/Desktop/polls/electoral_col - Sheet1.csv")
+elec_1 = select(elec_, electoral)
+```
+
+```{r echo = FALSE}
+state_dist2 = cbind(state_dist1, elec_1)
+state_dist02 = state_dist2[order(state_dist2$state),]
+state_dist2_1 = state_dist02[,!(names(state_dist02) %in% c('state'))]
+knitr::kable(state_dist2_1)
+```
+
+I then used the table to perform 1000 simulations which will help me discover the likely winner of the election. The diagram describing the simulation process is shown below.
+
+![](/Users/michaelonuoha/Downloads/Presidential Election Simulations (1).png)
+
+
+```{r echo = FALSE}
+#which confidence intervals overlap
+bin_overlap = c()
+for(i in 1:nrow(state_dist2)){
+  temp_x = max(state_dist2[i, "ci_trump_1"], state_dist2[i, "ci_biden_1"]) 
+  temp_y = min(state_dist2[i, "ci_trump_2"], state_dist2[i, "ci_biden_2"]) 
+  if(temp_x < temp_y){  # the case in which there is an overlap 
+    bin_overlap = c(bin_overlap, 1)  # 1 indicates yes
+  }else{
+    bin_overlap = c(bin_overlap, 0)  # 0 indicates no 
+  }
+}
+
+state_dist2[,'bin_overlap'] = bin_overlap
+state_dist_no_overlap = state_dist2[state_dist2$bin_overlap == 0,] #dataset for which the ci's don't overlap
+#View(state_dist_no_overlap)
+
+
+t = function(x){  #  function displays the sum of the electoral votes for each state that Trump is likely to win  
+  sum_trump = sum(x[which(x[, 'trump_mean'] > x[, 'biden_mean']), 'electoral'])
+  return(sum_trump)
+}
+
+b = function(x){  #  function displays the sum of the electoral votes for each state that Biden is likely to win  
+  sum_biden = sum(x[which(x[, 'trump_mean'] < x[, 'biden_mean']), 'electoral'])
+  return(sum_biden)
+}
+
+coin_toss_states = state_dist2[state_dist2$bin_overlap == 1,] #dataset for which the confidence intervals overlap
+bin_win = data.frame(matrix(nrow = nrow(coin_toss_states)))
+colnames(bin_win) = c("bin_winner")
+coin_toss_states = cbind(coin_toss_states, bin_win)
+
+election_result = data.frame(matrix(ncol = 3)) #table shows the predicted outcome of the election 
+colnames(election_result) = c("Trump", "Biden", "winner")
+```
+
+The code for the simulation is below: 
+```{r echo=TRUE}
+#let's perform 1000 simulations for the "coin toss" states
+for(j in 1:1000){
+  for(i in 1:nrow(state_dist2)){
+    prob_trump = state_dist2[i, 'trump_mean']/(state_dist2[i, 'trump_mean'] + state_dist2[i, 'biden_mean'])
+    prob_biden = state_dist2[i, 'biden_mean']/(state_dist2[i, 'trump_mean'] + state_dist2[i, 'biden_mean'])
+    temp_winner = sample(c(0, 1), 1, prob = c(prob_trump, prob_biden))
+    state_dist2[i, 'bin_winner'] = temp_winner
+  }
+  state_dist_trump = state_dist2[(state_dist2$bin_winner == 0),] #dataset with the coin toss states that Trump is likely to win 
+  state_dist_biden = state_dist2[(state_dist2$bin_winner == 1),] #dataset with the coin toss states that Biden is likely to win
+  #add up the electoral values for each candidate
+  trump_elec = sum(state_dist_trump$electoral) 
+  biden_elec = sum(state_dist_biden$electoral) 
+  trump_elec1 = as.integer(trump_elec)
+  biden_elec1 = as.integer(biden_elec)
+  #the electoral votes for each candidate in each simulation are aggregated
+  election_result[j, "Trump"] = trump_elec1
+  election_result[j, "Biden"] = biden_elec1
+  election_result[j, "winner"] = ifelse(biden_elec1 > trump_elec1, 'Biden', 'Trump')
+  election_result1 = election_result[complete.cases(election_result),]
+}
+```
+
+## Results
+
+```{r echo = FALSE}
+e = table(election_result1['winner'])
+barplot(e, main = 'Who is More Favored to Win?', xlab = 'Candidates', ylab = 'Number of Simulations', col = c('blue', 'red'))
+```
+
+Based on the bar graph above, this is the number of simulations out of 1000 in which Biden is projected to win: 
+```{r echo = FALSE} 
+nrow(election_result1[(election_result1$winner == 'Biden'),])
+``` 
+
+
+```{r echo=FALSE}
+density_biden = density(election_result1$Biden)
+density_trump = density(election_result1$Trump)
+plot(density_biden, xlab = 'Electoral Votes', ylab = 'Frequency', main = '2020 Presidential Election Predictions', col = 'blue', xlim = c(min(min(election_result1$Trump), min(election_result1$Biden)), max(max(election_result1$Trump), max(election_result1$Biden))))
+lines(density_trump, col = 'red')
+legend('topright', legend = c('Trump', 'Biden'), col = c('red', 'blue'), lty = 1:1)
+```
+
+Based on the density plot above, this is the number of electoral votes that Biden is most likely to win:
+```{r echo = FALSE} 
+as.integer(density_biden$x[which(density_biden$y == max(density_biden$y))])
+``` 
+And this is the number of electoral votes that Trump is most likely to win:
+```{r echo = FALSE} 
+as.integer(density_trump$x[which(density_trump$y == max(density_trump$y))])
+``` 
+
+## Discussion
+Based on the bar graph and density plot, Biden is favored to win the 2020 presidential election. When predicting the outcome of the election, there were many scenarios to take into account. Therefore, it was helpful to perform the 1000 simulations to discover which scenarios would benefit each candidate so that the winner could be predicted based on who had the most favorable scenarios. The density plot was also useful because the two curves represent the distribution of electoral votes for each candidate based on the simulations. 
+
+In conducting my analysis, it was important to pay attention to the following states projected to have close races:
+```{r echo=FALSE}
+unique(coin_toss_states$state)
+```
+
+The total number of electoral votes that each candidate was most likely to win was expected to be 538; but due to lack of data for Nebraska's third district, the actual sum turned out to be 536 total electoral votes. Fortunately, the two missing electoral votes were not significant to hinder my analysis. 
+Even though my analysis was accurate, it would have been more helpful if the aggregated dataset that I gathered included additional data. For instance, demographic data (e.g. race, gender, age, etc.) could have further broadened my analysis by helping me discover which groups would be more likely to vote for Biden or Trump. Nevertheless, the original data was sufficient to discover the projected victor of the election.  
+
+
+## Post-Election Discussion
+Based on the actual election results, which show that Biden won by 306 electoral votes whereas Trump won by 232 votes, my projections were correct in the sense that the former would win the election. However, the margin was not as narrow as I projected. One reason can be that 26,668,887 more Americans voted this year (a 20.7% increase from the 2016 election), and most of them voted by mail due to the COVID-19 pandemic. Another reason can be that some people who participated in the polling surveys did not vote in this election; and similarly, some people who did not participate in the surveys still voted. In fact, the latter reason might be more significant because the pre-election polling process usually fails to provide reliable predictions of who would win the presidency. Therefore, for future elections, it would be best to weight polling data less than other strong indicators for predicting the outcome.  
+
+
+
